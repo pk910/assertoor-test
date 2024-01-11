@@ -1,0 +1,74 @@
+name: Test1
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: "tests-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  run_starlark:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Setup Kurtosis
+      run: |
+        echo "deb [trusted=yes] https://apt.fury.io/kurtosis-tech/ /" | sudo tee /etc/apt/sources.list.d/kurtosis.list
+        sudo apt update
+        sudo apt install kurtosis-cli
+        kurtosis analytics disable
+    
+    - name: Run Starlark
+      run: |
+        kurtosis run ${{ github.workspace }} --enclave assertoor-test --args-file ./kurtosis-test1.yaml
+
+    - name: Get Service URLs
+      id: services
+      run: |
+        enclave_dump=$(kurtosis enclave inspect assertoor-test)
+
+        assertoor_url=$(echo "$enclave_dump" | grep assertoor | grep http | sed 's/.*\(http:\/\/[0-9.:]\+\).*/\1/')
+        echo "assertoor_url: ${assertoor_url}"
+        echo "assertoor_url=${assertoor_url}" >> $GITHUB_OUTPUT
+    
+    - name: Await test completion
+      run: |
+        YELLOW='\033[1;33m'
+        GREEN='\033[0;32m'
+        RED='\033[0;31m'
+        NC='\033[0m'
+
+        assertoor_url="${{ steps.services.outputs.assertoor_url }}"
+
+        while true
+        do
+          echo "Test Status:"
+          pending_tests=0
+
+          curl ${assertoor_url}/?json | jq -c ".tests[] | {name, status}" | while read test; do
+            test_name=$(echo "$test" | jq -r ".name")
+            test_status=$(echo "$test" | jq -r ".status")
+
+            echo -ne "  $name:\t"
+
+            if [ "$test_status" == "pending" ]; then
+              pending_tests=$(expr $pending_tests + 1)
+              echo "${YELLOW}pending${NC}"
+            else if [ "$test_status" == "success" ]; then
+              echo "${GREEN}success${NC}"
+            else if [ "$test_status" == "failure" ]; then
+              echo "${RED}failure${NC}"
+            else
+              echo "$test_status"
+            fi
+          done
+
+          if [ $pending_tests -le 0 ]; then
+            break
+          fi
+        done
+
+    
