@@ -10,9 +10,89 @@ concurrency:
 jobs:
   run_assertoor:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        test:
+        - "./kurtosis-test1.yaml"
+        pair:
+        - "teku-geth:prysm-nethermind"
+        - "teku-nethermind:lighthouse-erigon"
+        - "teku-erigon:nimbus-besu"
+        - "teku-besu:lodestar-reth"
+        #- "teku-reth:teku-geth"
+        
+        - "prysm-geth:lighthouse-nethermind"
+        - "prysm-nethermind:nimbus-erigon"
+        - "prysm-erigon:lodestar-besu"
+        - "prysm-besu:teku-reth"
+        #- "prysm-reth:prysm-geth"
+
+        - "lighthouse-geth:nimbus-nethermind"
+        - "lighthouse-nethermind:lodestar-erigon"
+        - "lighthouse-erigon:teku-besu"
+        - "lighthouse-besu:prysm-reth"
+        #- "lighthouse-reth:lighthouse-geth"
+
+        - "nimbus-geth:lodestar-nethermind"
+        - "nimbus-nethermind:teku-erigon"
+        - "nimbus-erigon:prysm-besu"
+        - "nimbus-besu:lighthouse-reth"
+        #- "nimbus-reth:nimbus-geth"
+
+        - "lodestar-geth:teku-nethermind"
+        - "lodestar-nethermind:prysm-erigon"
+        - "lodestar-erigon:lighthouse-besu"
+        - "lodestar-besu:nimbus-reth"
+        #- "lodestar-reth:lodestar-geth"
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v4
+
+    - name: Generate pair config
+      run: |
+        test_file="${{ matrix.test }}"
+        pair="${{ matrix.pair }}"
+        export cl1_type=$(echo "$pair" | sed 's/^\(.*\)-\(.*\):\(.*\)-\(.*\)$/\1/')
+        export el1_type=$(echo "$pair" | sed 's/^\(.*\)-\(.*\):\(.*\)-\(.*\)$/\2/')
+        export cl2_type=$(echo "$pair" | sed 's/^\(.*\)-\(.*\):\(.*\)-\(.*\)$/\3/')
+        export el2_type=$(echo "$pair" | sed 's/^\(.*\)-\(.*\):\(.*\)-\(.*\)$/\4/')
+
+        cl_image(){
+          if [ "$1" == "teku" ]; then echo "consensys/teku:24.1.0"
+          elif [ "$1" == "prysm" ]; then echo "gcr.io/prysmaticlabs/prysm/beacon-chain:HEAD-5cea6b,gcr.io/prysmaticlabs/prysm/validator:HEAD-5cea6b";
+          elif [ "$1" == "lighthouse" ]; then echo "ethpandaops/lighthouse:unstable-38df87c";
+          elif [ "$1" == "nimbus" ]; then echo "statusim/nimbus-eth2:multiarch-v24.1.1";
+          elif [ "$1" == "lodestar" ]; then echo "ethpandaops/lodestar:unstable-9262064";
+          fi
+        }
+
+        el_image(){
+          if [ "$1" == "geth" ]; then echo "ethereum/client-go:v1.13.9"
+          elif [ "$1" == "nethermind" ]; then echo "nethermind/nethermind:1.25.0";
+          elif [ "$1" == "erigon" ]; then echo "thorax/erigon:v2.56.1";
+          elif [ "$1" == "besu" ]; then echo "hyperledger/besu:24.1.0";
+          elif [ "$1" == "reth" ]; then echo "ghcr.io/paradigmxyz/reth:v0.1.0-alpha.14";
+          fi
+        }
+
+        export cl1_image="$(cl_image $cl1_type)"
+        export el1_image="$(el_image $el1_type)"
+        export cl2_image="$(cl_image $cl2_type)"
+        export el2_image="$(el_image $el2_type)"
+
+        echo "Client 1"
+        echo "CL: $cl1_type  ($cl1_image)"
+        echo "EL: $el1_type  ($el1_image)"
+        echo "Client 2"
+        echo "CL: $cl2_type  ($cl2_image)"
+        echo "EL: $el2_type  ($el2_image)"
+
+        mkdir -p ./temp
+        envsubst < $test_file > ./temp/test-network.yaml
+
+        echo ""
+        cat ./temp/test-network.yaml
 
     - name: Setup Kurtosis
       run: |
@@ -20,10 +100,10 @@ jobs:
         sudo apt update
         sudo apt install kurtosis-cli
         kurtosis analytics disable
-    
+
     - name: Run Kurtosis
       run: |
-        kurtosis run github.com/kurtosis-tech/ethereum-package --enclave assertoor-test --args-file ./kurtosis-test1.yaml
+        kurtosis run github.com/kurtosis-tech/ethereum-package --enclave assertoor-test --args-file ./temp/test-network.yaml
 
     - name: Get Service URLs
       id: services
@@ -52,6 +132,7 @@ jobs:
         while true
         do
           pending_tests=0
+          failed_tests=0
           running_test=""
 
           status_lines=()
@@ -73,6 +154,7 @@ jobs:
             elif [ "$test_status" == "success" ]; then
               status_name="${GREEN}success${NC}"
             elif [ "$test_status" == "failure" ]; then
+              failed_tests=$(expr $failed_tests + 1)
               status_name="${RED}failure${NC}"
             else
               status_name="$test_status"
@@ -87,6 +169,9 @@ jobs:
           done
 
           if [ $pending_tests -le 0 ]; then
+            if [ $failed_tests -gt 0 ]; then 
+              exit 1
+            fi
             break
           fi
 
