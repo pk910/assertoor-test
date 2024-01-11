@@ -8,7 +8,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  run_starlark:
+  run_assertoor:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout Repository
@@ -21,9 +21,9 @@ jobs:
         sudo apt install kurtosis-cli
         kurtosis analytics disable
     
-    - name: Run Starlark
+    - name: Run Kurtosis
       run: |
-        kurtosis run ${{ github.workspace }} --enclave assertoor-test --args-file ./kurtosis-test1.yaml
+        kurtosis run github.com/kurtosis-tech/ethereum-package --enclave assertoor-test --args-file ./kurtosis-test1.yaml
 
     - name: Get Service URLs
       id: services
@@ -37,38 +37,58 @@ jobs:
     - name: Await test completion
       run: |
         YELLOW='\033[1;33m'
+        GRAY='\033[0;37m'
         GREEN='\033[0;32m'
         RED='\033[0;31m'
         NC='\033[0m'
 
         assertoor_url="${{ steps.services.outputs.assertoor_url }}"
 
+        # print assertor logs
+        assertoor_container=$(docker container list | grep assertoor | sed 's/^\([^ ]\+\) .*$/\1/')
+        docker logs -f $assertoor_container &
+
+        # poll & check test status
         while true
         do
-          echo "Test Status:"
           pending_tests=0
+          running_test=""
 
-          curl ${assertoor_url}/?json | jq -c ".tests[] | {name, status}" | while read test; do
+          status_lines=()
+          status_lines+=("$(date +'%Y-%m-%d %H:%M:%S')  Test Status:")
+
+          tests=$(curl -s ${assertoor_url}/?json | jq -c ".tests[] | {index, name, status}")
+          while read test; do
+            test_id=$(echo "$test" | jq -r ".index")
             test_name=$(echo "$test" | jq -r ".name")
             test_status=$(echo "$test" | jq -r ".status")
 
-            echo -ne "  $name:\t"
-
             if [ "$test_status" == "pending" ]; then
               pending_tests=$(expr $pending_tests + 1)
-              echo "${YELLOW}pending${NC}"
-            else if [ "$test_status" == "success" ]; then
-              echo "${GREEN}success${NC}"
-            else if [ "$test_status" == "failure" ]; then
-              echo "${RED}failure${NC}"
+              status_name="${GRAY}pending${NC}"
+            elif [ "$test_status" == "running" ]; then
+              pending_tests=$(expr $pending_tests + 1)
+              running_test=$test_id
+              status_name="${YELLOW}running${NC}"
+            elif [ "$test_status" == "success" ]; then
+              status_name="${GREEN}success${NC}"
+            elif [ "$test_status" == "failure" ]; then
+              status_name="${RED}failure${NC}"
             else
-              echo "$test_status"
+              status_name="$test_status"
             fi
+            status_lines+=("  $status_name\t $test_name")
+
+          done <<< $(echo "$tests")
+
+          for status_line in "${status_lines[@]}"
+          do
+            echo -e "$status_line"
           done
 
           if [ $pending_tests -le 0 ]; then
             break
           fi
-        done
 
-    
+          sleep 60
+        done

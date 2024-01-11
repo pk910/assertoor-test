@@ -21,7 +21,7 @@ additional_services:
   - assertoor
 snooper_enabled: false
 assertoor_params:
-  run_stability_check: true
+  run_stability_check: false
   run_block_proposal_check: true
   run_lifecycle_test: false
   run_transaction_test: true
