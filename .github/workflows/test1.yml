@@ -16,35 +16,13 @@ jobs:
         test:
         - "./kurtosis-test1.yaml"
         pair:
-        - "teku-geth:prysm-nethermind"
-        - "teku-nethermind:lighthouse-erigon"
-        - "teku-erigon:nimbus-besu"
-        - "teku-besu:lodestar-reth"
-        #- "teku-reth:teku-geth"
-        
-        - "prysm-geth:lighthouse-nethermind"
-        - "prysm-nethermind:nimbus-erigon"
-        - "prysm-erigon:lodestar-besu"
-        - "prysm-besu:teku-reth"
-        #- "prysm-reth:prysm-geth"
-
-        - "lighthouse-geth:nimbus-nethermind"
-        - "lighthouse-nethermind:lodestar-erigon"
-        - "lighthouse-erigon:teku-besu"
-        - "lighthouse-besu:prysm-reth"
-        #- "lighthouse-reth:lighthouse-geth"
-
-        - "nimbus-geth:lodestar-nethermind"
-        - "nimbus-nethermind:teku-erigon"
-        - "nimbus-erigon:prysm-besu"
-        - "nimbus-besu:lighthouse-reth"
-        #- "nimbus-reth:nimbus-geth"
-
-        - "lodestar-geth:teku-nethermind"
-        - "lodestar-nethermind:prysm-erigon"
-        - "lodestar-erigon:lighthouse-besu"
-        - "lodestar-besu:nimbus-reth"
-        #- "lodestar-reth:lodestar-geth"
+        - "lighthouse-reth,teku-geth,prysm-nethermind"
+        - "lighthouse-geth,teku-nethermind,lodestar-erigon"
+        - "prysm-nethermind,teku-erigon,nimbus-besu"
+        - "prysm-geth,teku-besu,lodestar-reth"
+        - "nimbus-reth,prysm-geth,lighthouse-nethermind"
+        - "lodestar-geth,prysm-besu,nimbus-erigon"
+       
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v4
@@ -52,13 +30,9 @@ jobs:
     - name: Generate pair config
       run: |
         test_file="${{ matrix.test }}"
-        pair="${{ matrix.pair }}"
-        export cl1_type=$(echo "$pair" | sed 's/^\(.*\)-\(.*\):\(.*\)-\(.*\)$/\1/')
-        export el1_type=$(echo "$pair" | sed 's/^\(.*\)-\(.*\):\(.*\)-\(.*\)$/\2/')
-        export cl2_type=$(echo "$pair" | sed 's/^\(.*\)-\(.*\):\(.*\)-\(.*\)$/\3/')
-        export el2_type=$(echo "$pair" | sed 's/^\(.*\)-\(.*\):\(.*\)-\(.*\)$/\4/')
+        pairs="${{ matrix.pair }}"
 
-        cl_image(){
+        get_cl_image(){
           if [ "$1" == "teku" ]; then echo "consensys/teku:24.1.0"
           elif [ "$1" == "prysm" ]; then echo "gcr.io/prysmaticlabs/prysm/beacon-chain:HEAD-5cea6b,gcr.io/prysmaticlabs/prysm/validator:HEAD-5cea6b";
           elif [ "$1" == "lighthouse" ]; then echo "ethpandaops/lighthouse:unstable-38df87c";
@@ -67,7 +41,7 @@ jobs:
           fi
         }
 
-        el_image(){
+        get_el_image(){
           if [ "$1" == "geth" ]; then echo "ethereum/client-go:v1.13.9"
           elif [ "$1" == "nethermind" ]; then echo "nethermind/nethermind:1.25.0";
           elif [ "$1" == "erigon" ]; then echo "thorax/erigon:v2.56.1";
@@ -75,21 +49,41 @@ jobs:
           elif [ "$1" == "reth" ]; then echo "ghcr.io/paradigmxyz/reth:v0.1.0-alpha.14";
           fi
         }
-
-        export cl1_image="$(cl_image $cl1_type)"
-        export el1_image="$(el_image $el1_type)"
-        export cl2_image="$(cl_image $cl2_type)"
-        export el2_image="$(el_image $el2_type)"
-
-        echo "Client 1"
-        echo "CL: $cl1_type  ($cl1_image)"
-        echo "EL: $el1_type  ($el1_image)"
-        echo "Client 2"
-        echo "CL: $cl2_type  ($cl2_image)"
-        echo "EL: $el2_type  ($el2_image)"
+        
+        get_el_extra_params(){
+          if [ "$1" == "nethermind" ]; then echo "[\"--TxPool.BlobsSupport\", \"InMemory\"]";
+          fi
+        }
 
         mkdir -p ./temp
-        envsubst < $test_file > ./temp/test-network.yaml
+        echo "participants:" > ./temp/participants.yaml
+        client_idx=0
+        for pair in $(echo $pairs | tr "," "\n")
+        do
+          client_idx=$(expr $client_idx + 1)
+          cl_type=$(echo "$pair" | sed 's/^\(.*\)-\(.*\)$/\1/')
+          el_type=$(echo "$pair" | sed 's/^\(.*\)-\(.*\)$/\2/')
+          cl_image="$(get_cl_image $cl_type)"
+          el_image="$(get_el_image $el_type)"
+
+          echo "  - el_client_type: $el_type" >> ./temp/participants.yaml
+          echo "    el_client_image: $el_image" >> ./temp/participants.yaml
+          el_extra_params="$(get_el_extra_params $el_type)"
+          if [ ! -z "$el_extra_params" ]; then
+            echo "    el_extra_params: $el_extra_params" >> ./temp/participants.yaml
+          fi
+
+          echo "    cl_client_type: $cl_type" >> ./temp/participants.yaml
+          echo "    cl_client_image: $cl_image" >> ./temp/participants.yaml
+          echo "    count: 1" >> ./temp/participants.yaml
+
+          echo "Client $client_idx"
+          echo "CL: $cl_type  ($cl_image)"
+          echo "EL: $el_type  ($el_image)"
+        done
+
+        cp ./temp/participants.yaml ./temp/test-network.yaml
+        cat $test_file >> ./temp/test-network.yaml
 
         echo ""
         cat ./temp/test-network.yaml
