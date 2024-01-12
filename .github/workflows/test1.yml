@@ -16,12 +16,22 @@ jobs:
         test:
         - "./kurtosis-test1.yaml"
         pair:
-        - "lighthouse-reth,teku-geth,prysm-nethermind"
-        - "lighthouse-geth,teku-nethermind,lodestar-erigon"
-        - "prysm-nethermind,teku-erigon,nimbus-besu"
-        - "prysm-geth,teku-besu,lodestar-reth"
-        - "nimbus-reth,prysm-geth,lighthouse-nethermind"
-        - "lodestar-geth,prysm-besu,nimbus-erigon"
+        #- "lighthouse-reth,teku-geth,prysm-nethermind"
+        #- "lighthouse-geth,teku-nethermind,lodestar-erigon"
+        #- "prysm-nethermind,teku-erigon,nimbus-besu"
+        #- "prysm-geth,teku-besu,lodestar-reth"
+        #- "nimbus-reth,prysm-geth,lighthouse-nethermind"
+        #- "lodestar-geth,prysm-besu,nimbus-erigon"
+        - "random,random,random"
+        - "random,random,random"
+        - "random,random,random"
+        - "random,random,random"
+        - "random,random,random"
+        - "random,random,random"
+        - "random,random,random"
+        - "random,random,random"
+        - "random,random,random"
+        - "random,random,random"
        
     steps:
     - name: Checkout Repository
@@ -32,49 +42,53 @@ jobs:
         test_file="${{ matrix.test }}"
         pairs="${{ matrix.pair }}"
 
-        get_cl_image(){
-          if [ "$1" == "teku" ]; then echo "consensys/teku:24.1.0"
-          elif [ "$1" == "prysm" ]; then echo "gcr.io/prysmaticlabs/prysm/beacon-chain:HEAD-5cea6b,gcr.io/prysmaticlabs/prysm/validator:HEAD-5cea6b";
-          elif [ "$1" == "lighthouse" ]; then echo "ethpandaops/lighthouse:unstable-38df87c";
-          elif [ "$1" == "nimbus" ]; then echo "statusim/nimbus-eth2:multiarch-v24.1.1";
-          elif [ "$1" == "lodestar" ]; then echo "ethpandaops/lodestar:unstable-9262064";
-          fi
-        }
-
-        get_el_image(){
-          if [ "$1" == "geth" ]; then echo "ethereum/client-go:v1.13.9"
-          elif [ "$1" == "nethermind" ]; then echo "nethermind/nethermind:1.25.0";
-          elif [ "$1" == "erigon" ]; then echo "thorax/erigon:v2.56.1";
-          elif [ "$1" == "besu" ]; then echo "hyperledger/besu:24.1.0";
-          elif [ "$1" == "reth" ]; then echo "ghcr.io/paradigmxyz/reth:v0.1.0-alpha.14";
-          fi
-        }
-        
-        get_el_extra_params(){
-          if [ "$1" == "nethermind" ]; then echo "[\"--TxPool.BlobsSupport\", \"InMemory\"]";
-          fi
-        }
-
         mkdir -p ./temp
         echo "participants:" > ./temp/participants.yaml
         client_idx=0
         for pair in $(echo $pairs | tr "," "\n")
         do
           client_idx=$(expr $client_idx + 1)
-          cl_type=$(echo "$pair" | sed 's/^\(.*\)-\(.*\)$/\1/')
-          el_type=$(echo "$pair" | sed 's/^\(.*\)-\(.*\)$/\2/')
-          cl_image="$(get_cl_image $cl_type)"
-          el_image="$(get_el_image $el_type)"
+          if [ "$pair" == "random" ]; then
+            cl_type="random"
+            el_type="random"
+          else
+            cl_type=$(echo "$pair" | sed 's/^\(.*\)-\(.*\)$/\1/')
+            el_type=$(echo "$pair" | sed 's/^\(.*\)-\(.*\)$/\2/')
+          fi
+          
+          if [ "$cl_type" == "random" ]; then
+            cl_type=$(cat ./clients.yaml | yq -r ".consensus | keys" | shuf | tr -d ' -' | head -n 1)
+          fi
+          if [ "$el_type" == "random" ]; then
+            el_type=$(cat ./clients.yaml | yq -r ".execution | keys" | shuf | tr -d ' -' | head -n 1)
+          fi
+
+          cl_image="$(cat ./clients.yaml | yq ".consensus.${cl_type}.image")"
+          if [ "$cl_image" == "null" ]; then
+            echo "Unknown CL client type: $cl_type"
+            exit 1
+          fi
+
+          el_image="$(cat ./clients.yaml | yq ".execution.${el_type}.image")"
+          if [ "$el_image" == "null" ]; then
+            echo "Unknown EL client type: $el_type"
+            exit 1
+          fi
 
           echo "  - el_client_type: $el_type" >> ./temp/participants.yaml
           echo "    el_client_image: $el_image" >> ./temp/participants.yaml
-          el_extra_params="$(get_el_extra_params $el_type)"
-          if [ ! -z "$el_extra_params" ]; then
+          el_extra_params="$(cat ./clients.yaml | yq ".execution.${el_type}.params")"
+          if [ "$el_extra_params" != "null" ]; then
             echo "    el_extra_params: $el_extra_params" >> ./temp/participants.yaml
           fi
 
           echo "    cl_client_type: $cl_type" >> ./temp/participants.yaml
           echo "    cl_client_image: $cl_image" >> ./temp/participants.yaml
+          cl_extra_params="$(cat ./clients.yaml | yq ".consensus.${cl_type}.params")"
+          if [ "$cl_extra_params" != "null" ]; then
+            echo "    beacon_extra_params: $cl_extra_params" >> ./temp/participants.yaml
+          fi
+
           echo "    count: 1" >> ./temp/participants.yaml
 
           echo "Client $client_idx"
@@ -162,10 +176,10 @@ jobs:
             echo -e "$status_line"
           done
 
-          if [ $pending_tests -le 0 ]; then
-            if [ $failed_tests -gt 0 ]; then 
+          if [ $failed_tests -gt 0 ]; then 
               exit 1
             fi
+          if [ $pending_tests -le 0 ]; then
             break
           fi
 
