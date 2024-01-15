@@ -9,7 +9,7 @@ concurrency:
 
 jobs:
   run_assertoor:
-    runs-on: ubuntu-latest
+    uses: ./.github/workflows/_shared-run-docker.yaml
     strategy:
       fail-fast: false
       matrix:
@@ -32,14 +32,6 @@ jobs:
         - "lighthouse-random,random,random"
         - "lighthouse-random,random,random"
         - "lighthouse-random,random,random"
-       
-    steps:
-    - name: Checkout Repository
-      uses: actions/checkout@v4
-    - name: Run Tests for ${{ matrix.pairs }}
-      id: run-test
-      uses: ./.github/actions/run-test-docker
-      with:
-        ## Variables
-        pairs: ${{ matrix.pairs }}
-        config: ${{ matrix.config }}
+    with:
+      pairs: ${{ matrix.pairs }}
+      config: ${{ matrix.config }}

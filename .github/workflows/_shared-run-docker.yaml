@@ -1,17 +1,24 @@
-name: Run assertoor tests
-description: Run assertoor tests on kurtosis with docker backend
+name: Run assertoor tests on kurtosis with docker backend
 
-inputs:
-  pairs:
-    description: "The client pairs to use (format: consensus1-execution1,consensus2-execution2,...)."
-    required: true
-  config:
-    description: "The network config yaml to use (eg: kurtosis-test1.yaml)."
-    required: true
+on:
+  workflow_call:
+    inputs:
+      pairs:
+        type: string
+        description: "The client pairs to use (format: consensus1-execution1,consensus2-execution2,...)."
+        required: true
+      config:
+        type: string
+        description: "The network config yaml to use (eg: kurtosis-test1.yaml)."
+        required: true
 
-runs:
-  using: composite
-  steps:
+jobs:
+  run_test:
+    name: "Run test '${{ inputs.config }}' with '${{ inputs.pairs }}'"
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
     - name: "Generate kurtosis config with client pairs: ${{ inputs.pairs }}"
       shell: bash
       run: |
