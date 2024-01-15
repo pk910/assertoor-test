@@ -1,46 +1,22 @@
-name: Test1
+name: Run assertoor tests
+description: Run assertoor tests on kurtosis with docker backend
 
-on:
-  workflow_dispatch:
+inputs:
+  pairs:
+    description: "The client pairs to use (format: consensus1-execution1,consensus2-execution2,...)."
+    required: true
+  config:
+    description: "The network config yaml to use (eg: kurtosis-test1.yaml)."
+    required: true
 
-concurrency:
-  group: "tests-${{ github.ref }}"
-  cancel-in-progress: true
-
-jobs:
-  run_assertoor:
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        test:
-        - "./kurtosis-test1.yaml"
-        pair:
-        #- "lighthouse-reth,teku-geth,prysm-nethermind"
-        #- "lighthouse-geth,teku-nethermind,lodestar-erigon"
-        #- "prysm-nethermind,teku-erigon,nimbus-besu"
-        #- "prysm-geth,teku-besu,lodestar-reth"
-        #- "nimbus-reth,prysm-geth,lighthouse-nethermind"
-        #- "lodestar-geth,prysm-besu,nimbus-erigon"
-        - "random,random,random"
-        - "random,random,random"
-        - "random,random,random"
-        - "random,random,random"
-        - "random,random,random"
-        - "random,random,random"
-        - "random,random,random"
-        - "random,random,random"
-        - "random,random,random"
-        - "random,random,random"
-       
-    steps:
-    - name: Checkout Repository
-      uses: actions/checkout@v4
-
-    - name: Generate pair config
+runs:
+  using: composite
+  steps:
+    - name: "Generate kurtosis config with client pairs: ${{ inputs.pairs }}"
+      shell: bash
       run: |
-        test_file="${{ matrix.test }}"
-        pairs="${{ matrix.pair }}"
+        test_file="${{ inputs.config }}"
+        pairs="${{ inputs.pairs }}"
 
         mkdir -p ./temp
         echo "participants:" > ./temp/participants.yaml
@@ -96,13 +72,16 @@ jobs:
           echo "EL: $el_type  ($el_image)"
         done
 
+        export TESTS="https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/assertoor-tests"
+
         cp ./temp/participants.yaml ./temp/test-network.yaml
-        cat $test_file >> ./temp/test-network.yaml
+        cat $test_file | envsubst >> ./temp/test-network.yaml
 
         echo ""
         cat ./temp/test-network.yaml
 
     - name: Setup Kurtosis
+      shell: bash
       run: |
         echo "deb [trusted=yes] https://apt.fury.io/kurtosis-tech/ /" | sudo tee /etc/apt/sources.list.d/kurtosis.list
         sudo apt update
@@ -110,10 +89,12 @@ jobs:
         kurtosis analytics disable
 
     - name: Run Kurtosis
+      shell: bash
       run: |
         kurtosis run github.com/kurtosis-tech/ethereum-package --enclave assertoor-test --args-file ./temp/test-network.yaml
 
     - name: Get Service URLs
+      shell: bash
       id: services
       run: |
         enclave_dump=$(kurtosis enclave inspect assertoor-test)
@@ -123,14 +104,15 @@ jobs:
         echo "assertoor_url=${assertoor_url}" >> $GITHUB_OUTPUT
     
     - name: Await test completion
+      shell: bash
       run: |
+        assertoor_url="${{ steps.services.outputs.assertoor_url }}"
+
         YELLOW='\033[1;33m'
         GRAY='\033[0;37m'
         GREEN='\033[0;32m'
         RED='\033[0;31m'
         NC='\033[0m'
-
-        assertoor_url="${{ steps.services.outputs.assertoor_url }}"
 
         # print assertor logs
         assertoor_container=$(docker container list | grep assertoor | sed 's/^\([^ ]\+\) .*$/\1/')
