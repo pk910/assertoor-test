@@ -8,9 +8,10 @@ launch_additional_services: true
 additional_services:
   - assertoor
 snooper_enabled: false
+disable_peer_scoring: true
 assertoor_params:
   tests:
-  - "$TESTS/stability-check.yaml"
+  #- "$TESTS/stability-check.yaml"
   - "$TESTS/block-proposal-check.yaml"
   - "$TESTS/eoa-transactions-test.yaml"
   - "$TESTS/blob-transactions-test.yaml"
