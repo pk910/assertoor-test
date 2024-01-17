@@ -1,88 +1,122 @@
-name: Run assertoor tests on kurtosis with docker backend
+#name: Run assertoor tests on kurtosis with docker backend
 
 on:
   workflow_call:
     inputs:
+      id:
+        type: string
+        description: "The test identifier."
+        required: true
       pairs:
         type: string
         description: "The client pairs to use (format: consensus1-execution1,consensus2-execution2,...)."
         required: true
-      config:
+      worker:
         type: string
-        description: "The network config yaml to use (eg: kurtosis-test1.yaml)."
+        description: "The worker to use (default: ubuntu-latest)."
+        default: "ubuntu-latest"
+      clients:
+        type: string
+        description: "The clients config to use (default: clients/latest.yaml)."
+        default: "clients/latest.yaml"
+      kurtosis:
+        type: string
+        description: "The kurtosis network config to use (default: kurtosis-config/default.yaml)."
+        default: "kurtosis-config/default.yaml"
+      assertoor_tests:
+        type: string
+        description: "The list of assertoor test files to run."
         required: true
 
 jobs:
   run_test:
-    name: "Run test '${{ inputs.config }}' with '${{ inputs.pairs }}'"
-    runs-on: ubuntu-latest
+    name: "Run ${{ inputs.id }} with '${{ inputs.pairs }}'"
+    runs-on: ${{ inputs.worker }}
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v4
     - name: "Generate kurtosis config with client pairs: ${{ inputs.pairs }}"
       shell: bash
       run: |
-        test_file="${{ inputs.config }}"
+        clients_file="${{ inputs.clients }}"
+        kurtosis_file="${{ inputs.kurtosis }}"
         pairs="${{ inputs.pairs }}"
 
         mkdir -p ./temp
-        echo "participants:" > ./temp/participants.yaml
-        client_idx=0
-        for pair in $(echo $pairs | tr "," "\n")
-        do
-          client_idx=$(expr $client_idx + 1)
-          if [ "$pair" == "random" ]; then
-            cl_type="random"
-            el_type="random"
-          else
-            cl_type=$(echo "$pair" | sed 's/^\(.*\)-\(.*\)$/\1/')
-            el_type=$(echo "$pair" | sed 's/^\(.*\)-\(.*\)$/\2/')
-          fi
-          
-          if [ "$cl_type" == "random" ]; then
-            cl_type=$(cat ./clients.yaml | yq -r ".consensus | keys" | shuf | tr -d ' -' | head -n 1)
-          fi
-          if [ "$el_type" == "random" ]; then
-            el_type=$(cat ./clients.yaml | yq -r ".execution | keys" | shuf | tr -d ' -' | head -n 1)
-          fi
+        touch ./temp/participants.yaml
 
-          cl_image="$(cat ./clients.yaml | yq ".consensus.${cl_type}.image")"
-          if [ "$cl_image" == "null" ]; then
-            echo "Unknown CL client type: $cl_type"
-            exit 1
-          fi
+        if [ ! -z "$pairs" ]; then
+          echo "participants:" >> ./temp/participants.yaml
+          client_idx=0
+          for pair in $(echo $pairs | tr "," "\n")
+          do
+            client_idx=$(expr $client_idx + 1)
+            if [ "$pair" == "random" ]; then
+              cl_type="random"
+              el_type="random"
+            else
+              cl_type=$(echo "$pair" | sed 's/^\(.*\)-\(.*\)$/\1/')
+              el_type=$(echo "$pair" | sed 's/^\(.*\)-\(.*\)$/\2/')
+            fi
+            
+            if [ "$cl_type" == "random" ]; then
+              cl_type=$(cat $clients_file | yq -r ".consensus | keys" | shuf | tr -d ' -' | head -n 1)
+            fi
+            if [ "$el_type" == "random" ]; then
+              el_type=$(cat $clients_file | yq -r ".execution | keys" | shuf | tr -d ' -' | head -n 1)
+            fi
 
-          el_image="$(cat ./clients.yaml | yq ".execution.${el_type}.image")"
-          if [ "$el_image" == "null" ]; then
-            echo "Unknown EL client type: $el_type"
-            exit 1
-          fi
+            cl_image="$(cat $clients_file | yq ".consensus.${cl_type}.image")"
+            if [ "$cl_image" == "null" ]; then
+              echo "Unknown CL client type: $cl_type"
+              exit 1
+            fi
 
-          echo "  - el_client_type: $el_type" >> ./temp/participants.yaml
-          echo "    el_client_image: $el_image" >> ./temp/participants.yaml
-          el_extra_params="$(cat ./clients.yaml | yq ".execution.${el_type}.params")"
-          if [ "$el_extra_params" != "null" ]; then
-            echo "    el_extra_params: $el_extra_params" >> ./temp/participants.yaml
-          fi
+            el_image="$(cat $clients_file | yq ".execution.${el_type}.image")"
+            if [ "$el_image" == "null" ]; then
+              echo "Unknown EL client type: $el_type"
+              exit 1
+            fi
 
-          echo "    cl_client_type: $cl_type" >> ./temp/participants.yaml
-          echo "    cl_client_image: $cl_image" >> ./temp/participants.yaml
-          cl_extra_params="$(cat ./clients.yaml | yq ".consensus.${cl_type}.params")"
-          if [ "$cl_extra_params" != "null" ]; then
-            echo "    beacon_extra_params: $cl_extra_params" >> ./temp/participants.yaml
-          fi
+            echo "  - el_client_type: $el_type" >> ./temp/participants.yaml
+            echo "    el_client_image: $el_image" >> ./temp/participants.yaml
+            el_extra_params="$(cat $clients_file | yq ".execution.${el_type}.params")"
+            if [ "$el_extra_params" != "null" ]; then
+              echo "    el_extra_params: $el_extra_params" >> ./temp/participants.yaml
+            fi
 
-          echo "    count: 1" >> ./temp/participants.yaml
+            echo "    cl_client_type: $cl_type" >> ./temp/participants.yaml
+            echo "    cl_client_image: $cl_image" >> ./temp/participants.yaml
+            cl_extra_params="$(cat $clients_file | yq ".consensus.${cl_type}.params")"
+            if [ "$cl_extra_params" != "null" ]; then
+              echo "    beacon_extra_params: $cl_extra_params" >> ./temp/participants.yaml
+            fi
 
-          echo "Client $client_idx"
-          echo "CL: $cl_type  ($cl_image)"
-          echo "EL: $el_type  ($el_image)"
-        done
+            echo "    count: 1" >> ./temp/participants.yaml
 
-        export TESTS="https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/assertoor-tests"
+            echo "Client $client_idx"
+            echo "CL: $cl_type  ($cl_image)"
+            echo "EL: $el_type  ($el_image)"
+          done
+        fi
+
+        export PUBURL="https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}"
 
         cp ./temp/participants.yaml ./temp/test-network.yaml
-        cat $test_file | envsubst >> ./temp/test-network.yaml
+        cat $kurtosis_file | envsubst >> ./temp/test-network.yaml
+
+        kurtosis_cfg="$(cat ./temp/test-network.yaml | yq '.assertoor_params.tests=[]')"
+        tests_json=$(
+        cat <<"EOF"
+        ${{ inputs.assertoor_tests }}
+        EOF
+        )
+        test_index=0
+        while read assertoorTest; do
+          kurtosis_cfg="$(echo "$kurtosis_cfg" | yq ".assertoor_params.tests[$test_index]=\"$PUBURL/$assertoorTest\"")"
+          test_index=$(expr $test_index + 1)
+        done <<< $(echo "$tests_json" | jq -r '.[]')
+        echo "$kurtosis_cfg" > ./temp/test-network.yaml
 
         echo ""
         cat ./temp/test-network.yaml
@@ -125,6 +159,35 @@ jobs:
         assertoor_container=$(docker container list | grep assertoor | sed 's/^\([^ ]\+\) .*$/\1/')
         docker logs -f $assertoor_container &
 
+        get_tasks_status() {
+          tasks=$(curl -s ${assertoor_url}/test/$1?json | jq -c ".tasks[] | {index, name, title, status, result}")
+          while read task; do
+            task_id=$(echo "$task" | jq -r ".index")
+            task_name=$(echo "$task" | jq -r ".name")
+            task_title=$(echo "$task" | jq -r ".title")
+            task_status=$(echo "$task" | jq -r ".status")
+            task_result=$(echo "$task" | jq -r ".result")
+
+            if [ "$task_status" == "pending" ]; then
+              task_status="${GRAY}pending ${NC}"
+            elif [ "$task_status" == "running" ]; then
+              task_status="${YELLOW}running ${NC}"
+            elif [ "$task_status" == "complete" ]; then
+              task_status="${GREEN}complete${NC}"
+            fi
+
+            if [ "$task_result" == "none" ]; then
+              task_result="${GRAY}none   ${NC}"
+            elif [ "$task_result" == "success" ]; then
+              task_result="${GREEN}success${NC}"
+            elif [ "$task_result" == "failure" ]; then
+              task_result="${RED}failure${NC}"
+            fi
+            
+            echo -e " $task_id\t$task_status\t$task_result\t$task_name   \t$task_title"
+          done <<< $(echo "$tasks")
+        }
+
         # poll & check test status
         while true
         do
@@ -133,6 +196,7 @@ jobs:
           running_test=""
 
           status_lines=()
+          task_lines=""
           status_lines+=("$(date +'%Y-%m-%d %H:%M:%S')  Test Status:")
 
           tests=$(curl -s ${assertoor_url}/?json | jq -c ".tests[] | {index, name, status}")
@@ -146,8 +210,9 @@ jobs:
               status_name="${GRAY}pending${NC}"
             elif [ "$test_status" == "running" ]; then
               pending_tests=$(expr $pending_tests + 1)
-              running_test=$test_id
+              running_test="$test_id"
               status_name="${YELLOW}running${NC}"
+
             elif [ "$test_status" == "success" ]; then
               status_name="${GREEN}success${NC}"
             elif [ "$test_status" == "failure" ]; then
@@ -164,6 +229,12 @@ jobs:
           do
             echo -e "$status_line"
           done
+
+          if ! [ -z "$running_test" ]; then
+            task_lines=$(get_tasks_status "$running_test")
+            echo "Active Test Task Status:"
+            echo "$task_lines"
+          fi
 
           if [ $failed_tests -gt 0 ]; then 
               exit 1

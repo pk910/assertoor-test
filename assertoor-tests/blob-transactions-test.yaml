@@ -20,8 +20,9 @@ tasks:
     - name: generate_blob_transactions
       title: "Generate 2 blob transactions per block"
       config:
-        childWallets: 5
-        limitPending: 2
+        childWallets: 20
+        walletSeed: "blob-test"
+        limitPending: 10
         limitPerBlock: 2
         randomTarget: true
         amount: 1000000
@@ -71,8 +72,9 @@ tasks:
             - name: generate_blob_transactions
               title: "Generate 2 blob transactions per block and send via ${clientPairName}"
               config:
-                childWallets: 5
-                limitPending: 2
+                childWallets: 20
+                walletSeed: "blob-test"
+                limitPending: 10
                 limitPerBlock: 2
                 randomTarget: true
                 amount: 1000000

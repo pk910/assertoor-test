@@ -10,10 +10,5 @@ additional_services:
 snooper_enabled: false
 disable_peer_scoring: true
 assertoor_params:
-  tests:
-  #- "$TESTS/stability-check.yaml"
-  - "$TESTS/block-proposal-check.yaml"
-  - "$TESTS/eoa-transactions-test.yaml"
-  - "$TESTS/blob-transactions-test.yaml"
-  - "$TESTS/all-opcodes-transaction-test.yaml"
-
+  run_stability_check: false
+  run_block_proposal_check: false
