@@ -39,14 +39,14 @@ jobs:
             if ! [ -z "$filter_str" ]; then
               filter_str="$filter_str or"
             fi
-            filter_str="$filter_str select(.id == \"$test\")"
+            filter_str="$filter_str .id == \"$test\""
           done <<< $(echo "$override_tests" | tr "," "\n")
 
-          test_configs="$(echo "$test_configs" | jq -c ".[] | $filter_str")"
+          test_configs="$(echo "$test_configs" | jq -c ". | map(select($filter_str))")"
         fi
 
         if ! [ -z "$override_pairs" ]; then
-          test_configs="$(echo "$test_configs" | jq -c "(.[]).clientPairs |= [\"$override_pairs\"]"
+          test_configs="$(echo "$test_configs" | jq -c "(.[]).clientPairs |= [\"$override_pairs\"]")"
         fi
 
         echo "test_configs<<EOF" >> $GITHUB_OUTPUT
