@@ -17,6 +17,9 @@ tests:
   - assertoor-tests/block-proposal-check.yaml
   - assertoor-tests/eoa-transactions-test.yaml
   - assertoor-tests/all-opcodes-transaction-test.yaml
+  - assertoor-tests/validator-withdrawal-test.yaml
+  - assertoor-tests/validator-exit-test.yaml
+  - assertoor-tests/validator-slashing-test.yaml
 
 
 - id: "test2"
@@ -35,3 +38,6 @@ tests:
   - assertoor-tests/eoa-transactions-test.yaml
   - assertoor-tests/blob-transactions-test.yaml
   - assertoor-tests/all-opcodes-transaction-test.yaml
+  - assertoor-tests/validator-withdrawal-test.yaml
+  - assertoor-tests/validator-exit-test.yaml
+  - assertoor-tests/validator-slashing-test.yaml
