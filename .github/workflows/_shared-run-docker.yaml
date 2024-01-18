@@ -143,9 +143,10 @@ jobs:
         assertoor_url=$(echo "$enclave_dump" | grep assertoor | grep http | sed 's/.*\(http:\/\/[0-9.:]\+\).*/\1/')
         echo "assertoor_url: ${assertoor_url}"
         echo "assertoor_url=${assertoor_url}" >> $GITHUB_OUTPUT
-    
+
     - name: Await test completion
       shell: bash
+      id: test_result
       run: |
         assertoor_url="${{ steps.services.outputs.assertoor_url }}"
 
@@ -159,6 +160,7 @@ jobs:
         assertoor_container=$(docker container list | grep assertoor | sed 's/^\([^ ]\+\) .*$/\1/')
         docker logs -f $assertoor_container &
 
+        # helper to fetch task status for specific test id
         get_tasks_status() {
           tasks=$(curl -s ${assertoor_url}/test/$1?json | jq -c ".tasks[] | {index, name, title, status, result}")
           while read task; do
@@ -189,6 +191,8 @@ jobs:
         }
 
         # poll & check test status
+        final_test_result=""
+        failed_test_id=""
         while true
         do
           pending_tests=0
@@ -217,12 +221,12 @@ jobs:
               status_name="${GREEN}success${NC}"
             elif [ "$test_status" == "failure" ]; then
               failed_tests=$(expr $failed_tests + 1)
+              failed_test_id="$test_id"
               status_name="${RED}failure${NC}"
             else
               status_name="$test_status"
             fi
-            status_lines+=("  $status_name\t $test_name")
-
+            status_lines+=("  $(printf '%-3s' "$test_id") $status_name \t$test_name")
           done <<< $(echo "$tests")
 
           for status_line in "${status_lines[@]}"
@@ -237,11 +241,75 @@ jobs:
           fi
 
           if [ $failed_tests -gt 0 ]; then 
-              exit 1
-            fi
+            final_test_result="failure"
+            break
+          fi
           if [ $pending_tests -le 0 ]; then
+            final_test_result="success"
             break
           fi
 
           sleep 60
         done
+
+        # save test results & status to github output
+        echo "test_result=$(echo "$final_test_result")" >> $GITHUB_OUTPUT
+        echo "test_status<<EOF" >> $GITHUB_OUTPUT
+        for status_line in "${status_lines[@]}"
+        do
+          echo -e "$status_line" >> $GITHUB_OUTPUT
+        done
+        echo "EOF" >> $GITHUB_OUTPUT
+
+        if ! [ -z "$failed_test_id" ]; then
+          echo "failed_test_status<<EOF" >> $GITHUB_OUTPUT
+          get_tasks_status "$failed_test_id" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+        else
+          echo "failed_test_status=" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Generate dump of kurtosis enclave
+      shell: bash
+      run: |
+        mkdir -p ./temp/dump
+        cd ./temp/dump
+        cp ../test-network.yaml ./kurtosis-params.yaml
+
+        kurtosis enclave dump assertoor-test
+
+    - name: Upload dump artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: "kurtosis-dump-${{ inputs.id }}"
+        path: ./temp/dump
+    
+    - name: Return test result
+      shell: bash
+      run: |
+        test_result="${{ steps.test_result.outputs.test_result }}"
+        test_status=$(
+        cat <<"EOF"
+        ${{ steps.test_result.outputs.test_status }}
+        EOF
+        )
+        failed_test_status=$(
+        cat <<"EOF"
+        ${{ steps.test_result.outputs.failed_test_status }}
+        EOF
+        )
+
+        echo "Test Result:  $test_result"
+        echo "$test_status"
+
+        if ! [ "$test_result" == "success" ]; then
+          echo ""
+          echo "Failed Test Task Status:"
+          echo "$failed_test_status"
+
+          echo ""
+          echo "See 'Await test completion' task for detailed logs about this failure!"
+          echo ""
+
+          exit 1 # fail action
+        fi
