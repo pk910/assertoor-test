@@ -48,7 +48,7 @@ tasks:
   title: "Generate 50 BLS changes"
   config:
     limitTotal: 50
-    indexCount: 100
+    indexCount: 50
     targetAddress: 0x65D08a056c17Ae13370565B04cF77D2AfA1cB9FA
   configVars:
     mnemonic: "validatorMnemonic"

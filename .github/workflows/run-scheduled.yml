@@ -2,6 +2,8 @@ name: Run scheduled test
 
 on:
   workflow_dispatch:
+  schedule:
+  - cron: '0 6 * * *'
 
 concurrency:
   group: "scheduled-test"
@@ -25,7 +27,7 @@ jobs:
         test_configs="$(cat $tests_file | yq -o json | jq -c '.tests')"
         echo "test_configs<<EOF" >> $GITHUB_OUTPUT
         echo "$test_configs" >> $GITHUB_OUTPUT
-        echo "$test_configs"
+        echo "$(echo "$test_configs" | jq)"
         echo "EOF" >> $GITHUB_OUTPUT
 
   run_tests:

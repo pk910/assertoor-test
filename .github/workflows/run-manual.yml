@@ -2,6 +2,15 @@ name: Run manual test
 
 on:
   workflow_dispatch:
+    inputs:
+      overrideTests:
+        description: 'Test IDs to run (eg. test1,test2)'
+        default: ""
+        type: string
+      overrideClientPairs:
+        description: 'Override client pairs to run this test with (eg. lighthouse-get,teku-besu)'
+        default: ""
+        type: string
 
 jobs:
   get_tests:
@@ -17,11 +26,32 @@ jobs:
       shell: bash
       run: |
         tests_file="tests.yaml"
+        override_tests="${{ inputs.overrideTests }}"
+        override_pairs="${{ inputs.overrideClientPairs }}"
 
         test_configs="$(cat $tests_file | yq -o json | jq -c '.tests')"
+
+        if ! [ -z "$override_tests" ]; then
+          # filter by tests
+          filter_str=""
+
+          while read test; do
+            if ! [ -z "$filter_str" ]; then
+              filter_str="$filter_str or"
+            fi
+            filter_str="$filter_str select(.id == \"$test\")"
+          done <<< $(echo "$override_tests" | tr "," "\n")
+
+          test_configs="$(echo "$test_configs" | jq -c ".[] | $filter_str")"
+        fi
+
+        if ! [ -z "$override_pairs" ]; then
+          test_configs="$(echo "$test_configs" | jq -c "(.[]).clientPairs |= [\"$override_pairs\"]"
+        fi
+
         echo "test_configs<<EOF" >> $GITHUB_OUTPUT
         echo "$test_configs" >> $GITHUB_OUTPUT
-        echo "$test_configs"
+        echo "$(echo "$test_configs" | jq)"
         echo "EOF" >> $GITHUB_OUTPUT
 
   run_tests:
